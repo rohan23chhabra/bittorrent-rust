@@ -14,6 +14,15 @@ fn decode_bencoded_value(encoded_value: &str) -> serde_json::Value {
         let number = number_string.parse::<i64>().unwrap();
         let string = &encoded_value[colon_index + 1..colon_index + 1 + number as usize];
         return serde_json::Value::String(string.to_string());
+    } else if encoded_value.starts_with("i") && encoded_value.ends_with("e") {
+        // Example: "i-52e" -> 52
+        let len = encoded_value.chars().count();
+        // println!("length = {}", len);
+        let num_str = &encoded_value[1..len - 1];
+        // println!("num_str = {}", num_str);
+        let number = num_str.parse::<i64>().unwrap();
+        // println!("number = {}", number);
+        return serde_json::Value::Number(number.into());
     } else {
         panic!("Unhandled encoded value: {}", encoded_value)
     }
