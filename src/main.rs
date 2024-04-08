@@ -43,6 +43,20 @@ fn decode_bencoded_value(encoded_value: &str) -> Result<(serde_json::Value, &str
         }
 
         return Ok((serde_json::Value::Array(ans), &rest[1..]));
+    } else if encoded_value.starts_with("d") {
+        let mut ans = serde_json::Map::new();
+        let mut rest = &encoded_value[1..];
+        while !rest.is_empty() && !rest.starts_with('e') {
+            let (result, rest_str) = decode_bencoded_value(rest).ok().expect("String should be valid");
+            rest = rest_str;
+            let key = result.as_str().expect("Key should be a string");
+            // eprintln!("key is {key}");
+            let (value, rest_str) = decode_bencoded_value(rest).ok().expect("String should be valid");
+            rest = rest_str;
+            ans.insert(String::from(key), value);
+        }
+
+        return Ok((serde_json::Value::Object(ans), &rest[1..]));
     } else {
         panic!("Unhandled encoded value: {}", encoded_value)
     }
