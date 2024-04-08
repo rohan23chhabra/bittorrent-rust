@@ -5,49 +5,44 @@ use std::env;
 // use serde_bencode
 
 #[allow(dead_code)]
-fn decode_bencoded_value(encoded_value: &str) -> (serde_json::Value, usize) {
+fn decode_bencoded_value(encoded_value: &str) -> Result<(serde_json::Value, &str), &str> {
     // If encoded_value starts with a digit, it's a number
     if encoded_value.chars().next().unwrap().is_digit(10) {
-        // Example: "5:hello" -> "hello"
-        let colon_index = encoded_value.find(':').unwrap();
-        let number_string = &encoded_value[..colon_index];
-        let len_number_string = number_string.chars().count();
-        let number = number_string.parse::<i64>().unwrap();
-        let string = &encoded_value[colon_index + 1..colon_index + 1 + number as usize];
-        let len_string = string.chars().count();
-        return (serde_json::Value::String(string.to_string()), len_number_string + len_string + 1);
+        if let Some((len_str, rest_str)) = encoded_value.split_once(':') {
+            let len = len_str.parse::<usize>().expect("valid unsigned digit");
+            // eprintln!("Inside DIGIT");
+            // eprintln!("rest_str is {rest_str}");
+            // eprintln!("len is {len}");
+            let word = &rest_str[..len];
+            // eprintln!("word is {word}");
+            let rest = &rest_str[len..];
+            // eprintln!("rest is {rest}");
+            return Ok((serde_json::Value::String(word.to_string()), rest));
+        }
+        return Err("There is no : in the encoded value");
     } else if encoded_value.starts_with("i") {
-        // Example: "i-52e" -> 52
-        let pos_of_i = encoded_value.find('i').unwrap();
-        let pos_of_e = encoded_value.find('e').unwrap();
-        // println!("pos_of_i = {}, pos_of_e = {}", pos_of_i, pos_of_e);
-        let len = pos_of_e - pos_of_i + 1;
-        // println!("length = {}", len);
-        let num_str = &encoded_value[1..len - 1];
-        // println!("num_str = {}", num_str);
-        let number = num_str.parse::<i64>().unwrap();
-        // println!("number = {}", number);
-        return (serde_json::Value::Number(number.into()), len);
-    } else if encoded_value.starts_with("l") && encoded_value.ends_with("e") {
-        let len = encoded_value.chars().count();
-        // println!("length = {}", len);
-        let mut trimmed_value = &encoded_value[1..len - 1];
-        let mut i = 0;
-        let mut answer_vec: Vec<serde_json::Value> = Vec::new();
-        while i < len - 2 {
-            // println!("i = {}", i);
-            // println!("trimmed_value = {}", trimmed_value);
-            let (decoded_value, length) = decode_bencoded_value(trimmed_value);
-            // println!("decoded_value = {}, length = {}", decoded_value, length);
-            answer_vec.push(decoded_value);
-            i += length;
-            // println!("updated i = {}", i);
-            trimmed_value = &encoded_value[i + 1..len - 1];
-            // println!("updated trimmed_value = {}", trimmed_value);
+        if let Some((prefix_str, suffix)) = encoded_value.split_once('e') {
+            let prefix = &prefix_str[1..];
+            // eprintln!("Inside I");
+            // eprintln!("prefix is {prefix}");
+            // eprintln!("suffix is {suffix}");
+            let number = prefix.parse::<i64>().expect("valid int64 number");
+            // eprintln!("Number is {number}");
+            return Ok((serde_json::Value::Number(number.into()), suffix));
+        }
+        return Err("There is no 'e' in the encoded value");
+    } else if encoded_value.starts_with("l") {
+        let mut ans = Vec::new();
+        let mut rest = &encoded_value[1..];
+        // eprintln!("rest is {rest}");
+        while !rest.is_empty() && !rest.starts_with('e') {
+            let (result, rest_str) = decode_bencoded_value(rest).ok().expect("String should be valid");
+            // eprintln!("result is {result}, remainder is {rest_str}");
+            ans.push(result);
+            rest = rest_str;
         }
 
-        let answer = serde_json::Value::Array(answer_vec);
-        return (answer, len);
+        return Ok((serde_json::Value::Array(ans), &rest[1..]));
     } else {
         panic!("Unhandled encoded value: {}", encoded_value)
     }
@@ -60,9 +55,12 @@ fn main() {
 
     if command == "decode" {
         let encoded_value = &args[2];
-        let (decoded_value, _) = decode_bencoded_value(encoded_value);
+        let (decoded_value, _) = decode_bencoded_value(encoded_value).ok().expect("Should only panic and not return an error");
         println!("{}", decoded_value.to_string());
     } else {
         println!("unknown command: {}", args[1])
     }
 }
+
+// lli543e9:blueberryee
+// lli4eei5ee
