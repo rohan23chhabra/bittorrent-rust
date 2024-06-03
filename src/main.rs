@@ -1,11 +1,8 @@
-use std::collections::HashMap;
-use serde_json;
-use std::env;
-use hex::{decode, encode};
-use serde::{Deserialize, Serialize};
+use std::{env, fs};
 
 // Available if you need it!
 use serde_bencode;
+use serde_json;
 use serde_json::Value;
 
 fn decode_bencoded_value(encoded_value: &str) -> anyhow::Result<Value> {
@@ -45,6 +42,69 @@ fn transform_bencoded_value_to_json_value(bencoded_value: serde_bencode::value::
     }
 }
 
+
+
+struct Torrent {
+    tracker_url: Vec<u8>,
+    info: TorrentInfo
+}
+
+struct TorrentInfo {
+    length: i64,
+    name: String,
+    piece_length: i64,
+    pieces: Vec<u8>
+}
+
+fn get_torrent(file_name: &str) -> anyhow::Result<Torrent> {
+    let data: Vec<u8> = fs::read(file_name).expect("file couldn't be read");
+
+    let result: serde_bencode::value::Value = serde_bencode::from_bytes(&*data).expect("failed to parse file data");
+    match result {
+        serde_bencode::value::Value::Dict(dict) => {
+            let mut torrent: Torrent = Torrent {
+                tracker_url: vec![],
+                info: TorrentInfo {
+                    length: 0,
+                    name: "".to_string(),
+                    piece_length: 0,
+                    pieces: vec![],
+                }
+            };
+
+            let announce_value = dict.get("announce".as_bytes()).expect("key 'announce' should exist in the dict");
+            match announce_value {
+                serde_bencode::value::Value::Bytes(serde_bytes) => {
+                    torrent.tracker_url = serde_bytes.clone();
+                }
+
+                _ => {
+                    panic!("announce should always be a byte stream")
+                }
+            }
+
+            let info_value = dict.get("info".as_bytes()).expect("key 'info' should exist in the dict");
+            match info_value {
+                serde_bencode::value::Value::Dict(info_dict) => {
+                    if let serde_bencode::value::Value::Int(length_in_dict) = info_dict.get("length".as_bytes()).expect("key 'length' should be part of info dictionary") {
+                        torrent.info.length = *length_in_dict;
+                    }
+                }
+
+                _ => {
+                    panic!("info should be a dictionary in torrent file")
+                }
+            }
+
+            Ok(torrent)
+        }
+
+        _ => {
+            panic!("file data should represent a dictionary");
+        }
+    }
+}
+
 // Usage: your_bittorrent.sh decode "<encoded_value>"
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -55,7 +115,10 @@ fn main() {
         let decoded_value = decode_bencoded_value(encoded_value).expect("encoded value must be valid");
         println!("{}", decoded_value.to_string());
     } else if command == "info" {
-
+        let file_name = &args[2];
+        let torrent = get_torrent(file_name).expect("Torrent couldn't be obtained");
+        println!("Tracker URL: {}", String::from_utf8(torrent.tracker_url).expect("tracker URL should be a string"));
+        println!("Length: {}", torrent.info.length);
     } else {
         println!("unknown command: {}", args[1])
     }
