@@ -1,64 +1,47 @@
+use std::collections::HashMap;
 use serde_json;
 use std::env;
+use hex::{decode, encode};
+use serde::{Deserialize, Serialize};
 
 // Available if you need it!
-// use serde_bencode
+use serde_bencode;
+use serde_json::Value;
 
-#[allow(dead_code)]
-fn decode_bencoded_value(encoded_value: &str) -> Result<(serde_json::Value, &str), &str> {
-    // If encoded_value starts with a digit, it's a number
-    if encoded_value.chars().next().unwrap().is_digit(10) {
-        if let Some((len_str, rest_str)) = encoded_value.split_once(':') {
-            let len = len_str.parse::<usize>().expect("valid unsigned digit");
-            // eprintln!("Inside DIGIT");
-            // eprintln!("rest_str is {rest_str}");
-            // eprintln!("len is {len}");
-            let word = &rest_str[..len];
-            // eprintln!("word is {word}");
-            let rest = &rest_str[len..];
-            // eprintln!("rest is {rest}");
-            return Ok((serde_json::Value::String(word.to_string()), rest));
-        }
-        return Err("There is no : in the encoded value");
-    } else if encoded_value.starts_with("i") {
-        if let Some((prefix_str, suffix)) = encoded_value.split_once('e') {
-            let prefix = &prefix_str[1..];
-            // eprintln!("Inside I");
-            // eprintln!("prefix is {prefix}");
-            // eprintln!("suffix is {suffix}");
-            let number = prefix.parse::<i64>().expect("valid int64 number");
-            // eprintln!("Number is {number}");
-            return Ok((serde_json::Value::Number(number.into()), suffix));
-        }
-        return Err("There is no 'e' in the encoded value");
-    } else if encoded_value.starts_with("l") {
-        let mut ans = Vec::new();
-        let mut rest = &encoded_value[1..];
-        // eprintln!("rest is {rest}");
-        while !rest.is_empty() && !rest.starts_with('e') {
-            let (result, rest_str) = decode_bencoded_value(rest).ok().expect("String should be valid");
-            // eprintln!("result is {result}, remainder is {rest_str}");
-            ans.push(result);
-            rest = rest_str;
+fn decode_bencoded_value(encoded_value: &str) -> anyhow::Result<Value> {
+    let bencoded_value: serde_bencode::value::Value = serde_bencode::from_str(encoded_value).expect("encoded value is invalid");
+    return transform_bencoded_value_to_json_value(bencoded_value)
+}
+
+fn transform_bencoded_value_to_json_value(bencoded_value: serde_bencode::value::Value) -> anyhow::Result<serde_json::Value> {
+    match bencoded_value {
+        serde_bencode::value::Value::Bytes(b) => {
+            let string = String::from_utf8(b).expect("should be a valid UTF-8 string");
+            Ok(Value::String(string))
         }
 
-        return Ok((serde_json::Value::Array(ans), &rest[1..]));
-    } else if encoded_value.starts_with("d") {
-        let mut ans = serde_json::Map::new();
-        let mut rest = &encoded_value[1..];
-        while !rest.is_empty() && !rest.starts_with('e') {
-            let (result, rest_str) = decode_bencoded_value(rest).ok().expect("String should be valid");
-            rest = rest_str;
-            let key = result.as_str().expect("Key should be a string");
-            // eprintln!("key is {key}");
-            let (value, rest_str) = decode_bencoded_value(rest).ok().expect("String should be valid");
-            rest = rest_str;
-            ans.insert(String::from(key), value);
+        serde_bencode::value::Value::Int(i) => {
+            Ok(Value::Number(serde_json::Number::from(i)))
         }
 
-        return Ok((serde_json::Value::Object(ans), &rest[1..]));
-    } else {
-        panic!("Unhandled encoded value: {}", encoded_value)
+        serde_bencode::value::Value::List(list) => {
+            let mut answer: Vec<Value> = vec![];
+            for element in list.into_iter() {
+                answer.push(transform_bencoded_value_to_json_value(element).expect("Individual element of list should be a valid encoded value"))
+            }
+
+            Ok(Value::Array(answer))
+        }
+
+        serde_bencode::value::Value::Dict(dict) => {
+            let mut answer: serde_json::value::Map<String, Value> = Default::default();
+            for (key, value) in dict.into_iter() {
+                let modified_key = String::from_utf8(key).expect("key should be a valid string in dict");
+                answer.insert(modified_key, transform_bencoded_value_to_json_value(value).expect("value should be a valid value in dict"));
+            }
+
+            Ok(Value::Object(answer))
+        }
     }
 }
 
@@ -69,8 +52,10 @@ fn main() {
 
     if command == "decode" {
         let encoded_value = &args[2];
-        let (decoded_value, _) = decode_bencoded_value(encoded_value).ok().expect("Should only panic and not return an error");
+        let decoded_value = decode_bencoded_value(encoded_value).expect("encoded value must be valid");
         println!("{}", decoded_value.to_string());
+    } else if command == "info" {
+
     } else {
         println!("unknown command: {}", args[1])
     }
