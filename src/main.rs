@@ -54,8 +54,8 @@ struct TorrentInfo {
     length: i64,
     name: String,
     #[serde(rename = "piece length")]
-    piece_length: i64,
-    pieces: Vec<u8>,
+    piece_length: usize,
+    pieces: Vec<String>,
     hash: String
 }
 
@@ -97,11 +97,15 @@ fn get_torrent(file_name: &str) -> anyhow::Result<Torrent> {
 
                     if let serde_bencode::value::Value::Int(piece_length) = info_dict.get("piece length".as_bytes()).expect("key 'piece length' should exist in info dictionary") {
                         println!("Piece length = {}", piece_length);
-                        torrent.info.piece_length = *piece_length;
+                        torrent.info.piece_length = *piece_length as usize;
                     }
 
                     if let serde_bencode::value::Value::Bytes(piece_bytes) = info_dict.get("pieces".as_bytes()).expect("key 'pieces' should exist in info dictionary") {
-                        torrent.info.pieces = piece_bytes.clone();
+                        let mut ii = 0;
+                        while ii < piece_bytes.len() {
+                            torrent.info.pieces.push(hex::encode(&piece_bytes[ii..ii + 20]));
+                            ii += 20;
+                        }
                     }
 
                     if let serde_bencode::value::Value::Bytes(name) = info_dict.get("name".as_bytes()).expect("key 'name' should exist in info dictionary") {
@@ -138,6 +142,11 @@ fn main() {
         println!("Tracker URL: {}", String::from_utf8(torrent.tracker_url).expect("tracker URL should be a string"));
         println!("Length: {}", torrent.info.length);
         println!("Info Hash: {}", torrent.info.hash);
+        println!("Piece Length: {}", torrent.info.piece_length);
+        println!("Piece Hashes:");
+        for piece_hash in torrent.info.pieces {
+            println!("{}", piece_hash);
+        }
     } else {
         println!("unknown command: {}", args[1])
     }
